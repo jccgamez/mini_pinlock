@@ -34,7 +34,7 @@
 #include <7seg_dp_4dig_V5.h>
 #include <MCP4541.h>
 #include <test.h>
-#include <hex_loader.h>
+//#include <hex_loader.h>
 
 #define in_0 PIN_C0 // input 0 quinta rueda
 #define in_1 PIN_C1 // input 1 puertas
@@ -120,7 +120,7 @@ char rst_micro[]="*rst#";
 short data_buffer=false; // Bandera que indica si hay datos en el buffer
 short hex_loader_flag = false;
 char syrus_buffer[1023]; // bufer donde se alamcenan los datos entrantes al puerto serial
-int index=0; // indice que indica en que nivel de la pila se esta guardando el dato en el puerto serial
+int16 index=0; // indice que indica en que nivel de la pila se esta guardando el dato en el puerto serial
 
 /*variables para grabar cadenas grandes en eeprom*/
 short hex_data_buffer = false;
@@ -129,15 +129,15 @@ int16 syrus_buffer_index;
 int16 hex_eemprom_address = 1000;
 int16 hex_eemprom_index = 0;
 int16 next_eeprom_page = 50;
-int total_arrows;
+int16 total_arrows;
 
 
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////        DEFINICION DE FUNCIONES DEL PRGRAMA           /////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
-
 void scan_cmd(); // Cuando hay una cadena posible valida en el buffer, se analiza en esta funcion si pertenece a algun comando valido
+void scan_update();
 void send_to_buffer_syrus(char c); // Recibe el caracter que se lee por el puerto serial y lo almacena en un buffer para su posterior procesamiento
 void make_digits(); // Toma una variable de 16bit y la convierte en unidades, decenas, centenas y millares para desplegarla en los displays
 void init_interrupts(); // Activa las interrupciones del programa
@@ -197,8 +197,8 @@ void serial_isr2()
 
 void scan_cmd()
 {
-  int length=0;
-  int i=0;
+  int16 length=0;
+  int16 i=0;
   int j=0;
   int letter_index;
   int password_test_nib1;
@@ -241,27 +241,32 @@ void scan_cmd()
   if(hex_data_buffer==true) // Si hay un dato en buffer que puede ser un paquete de programacionñ
   {
     disable_interrupts(global); // deshabilita las interrupciones para dedicarse a grabar en la eeprom
-
+    //fprintf(syrus, "00\r\n");
     while(syrus_buffer[i]!='&')
     {
       i++;
       length++;
     }
     length++;  
-
+    //fprintf(syrus, "01\r\n");
     syrus_buffer_index = 1;
     hex_eemprom_index = 0;
     total_arrows = 0;
     if((syrus_buffer[0]=='*')&&(syrus_buffer[length-1]=='&'))
     {      
-      while(syrus_buffer[syrus_buffer_index]==':');
+      //fprintf(syrus, "02\r\n");
+      while(syrus_buffer[syrus_buffer_index]==':')
       {
+        //fprintf(syrus, "03\r\n");
+        restart_wdt(); 
         do{
+          //fprintf(syrus, "04\r\n");
+          restart_wdt(); 
           //hex_buffer[j] = syrus_buffer[syrus_buffer_index];
           write_ext_eeprom(hex_eemprom_address+hex_eemprom_index,syrus_buffer[syrus_buffer_index]);   
           syrus_buffer_index++;
           hex_eemprom_index++;
-        }while((syrus_buffer[syrus_buffer_index]!=':')&&(syrus_buffer[syrus_buffer_index+1]!='&'))
+        }while((syrus_buffer[syrus_buffer_index]!=':')&&(syrus_buffer[syrus_buffer_index+1]!='&'));
         hex_eemprom_address += next_eeprom_page;
         total_arrows++;
         hex_eemprom_index = 0;
@@ -278,12 +283,12 @@ void send_to_buffer_syrus(char c)
 { 
    restart_wdt(); 
    syrus_buffer[index]=c; // Se alamcena el caracter entrante en el ultimo nivel de la pila del buffe
-   if(index>=syrus_buffer) 
-   {
-      index = 0;
-   }
-   else
-   {
+//!   if(index>=syrus_buffer) 
+//!   {
+//!      index = 0;
+//!   }
+//!   else
+//!   {
       if(syrus_buffer[index]=='#') // si el caracter entrante es '#' se considera final de cadena y se analiza el bufer
       {
          data_buffer=true; // activando la bandera de 'Dato listo en buffer'
@@ -296,7 +301,7 @@ void send_to_buffer_syrus(char c)
       {     
          index++;   
       }
-   }   
+//!   }   
 }
 
 
@@ -320,7 +325,7 @@ void init_interrupts()
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////        PROGRAMA PRINCIPAL           /////////////////////////////////
+//!////////////////////////////////        PROGRAMA PRINCIPAL           /////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -339,11 +344,7 @@ void main()
       // Monitorea si hay comandos en el buffer del puerto serial para ser analizados
       scan_cmd();
       
-      if(hex_loader_flag)
-      {
-         get_hex();
-         hex_loader_flag = false;
-      }
+      scan_update();
    }
 }
 
