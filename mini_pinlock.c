@@ -123,14 +123,19 @@ char syrus_buffer[1023]; // bufer donde se alamcenan los datos entrantes al puer
 int16 index=0; // indice que indica en que nivel de la pila se esta guardando el dato en el puerto serial
 
 /*variables para grabar cadenas grandes en eeprom*/
+const int16 hex_start_eemprom_address = 1000;
+const int16 next_eeprom_page = 50;
+int16 hex_eemprom_index;
+int16 hex_eeprom_arrow;
 short hex_data_buffer = false;
 char length;
 int16 syrus_buffer_index;
-int16 hex_eemprom_address = 1000;
-int16 hex_eemprom_index = 0;
-int16 next_eeprom_page = 50;
 int16 total_arrows;
 
+/*variables de prueba solo para imprimir los daatos de la eeprom*/
+short print_eeprom_flag = false;
+int linea;
+char data_eeprom;
 
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -141,6 +146,7 @@ void scan_update();
 void send_to_buffer_syrus(char c); // Recibe el caracter que se lee por el puerto serial y lo almacena en un buffer para su posterior procesamiento
 void make_digits(); // Toma una variable de 16bit y la convierte en unidades, decenas, centenas y millares para desplegarla en los displays
 void init_interrupts(); // Activa las interrupciones del programa
+void print_eeprom();
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////         VARIABLES DEL PRGRAMA           ///////////////////////////////
@@ -191,14 +197,10 @@ void serial_isr2()
 //////////////////////////////        FUNCIONES DEL PRGRAMA           ////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
-
 void scan_cmd()
 {
-  int16 length=0;
-  int16 i=0;
+  int16 cmd_length=0;
+  int16 cmd_index=0;
   int j=0;
   int letter_index;
   int password_test_nib1;
@@ -217,18 +219,18 @@ void scan_cmd()
     disable_interrupts(global);
     strlwr (syrus_buffer);
 
-    while(syrus_buffer[i]!='#')
+    while(syrus_buffer[cmd_index]!='#')
     {
-      i++;
-      length++;
+      cmd_index++;
+      cmd_length++;
     }
-    length++;  
+    cmd_length++;  
 
-    if((syrus_buffer[0]=='*')&&(syrus_buffer[length-1]=='#'))
+    if((syrus_buffer[0]=='*')&&(syrus_buffer[cmd_length-1]=='#'))
     {         
-      if(!strncmp(rst_micro, syrus_buffer, length))
+      if(!strncmp(rst_micro, syrus_buffer, cmd_length))
       {
-        fprintf(syrus,"\r\nMensaje recibido");  
+        print_eeprom_flag = true;
         hex_loader_flag = true;
       }
     }
@@ -237,39 +239,56 @@ void scan_cmd()
     data_buffer=false;
     enable_interrupts(global);  
   }  
+}
 
+void scan_update()
+{
+  int16 updatelength = 0;
+  int16 update_index = 0;
+  int j=0;
+  int letter_index;
+  int password_test_nib1;
+  int password_test_nib0;
+  int16 password_master_counter;
+  char char_password[10];
+  char char_password_master[10];
+  char letter_pass[17];
+  int16 password_test;
+  int16 password_test_counter;
+  int16 password_test_master;
+
+  restart_wdt(); 
   if(hex_data_buffer==true) // Si hay un dato en buffer que puede ser un paquete de programacionñ
   {
     disable_interrupts(global); // deshabilita las interrupciones para dedicarse a grabar en la eeprom
     //fprintf(syrus, "00\r\n");
-    while(syrus_buffer[i]!='&')
+    while(syrus_buffer[update_index]!='&')
     {
-      i++;
-      length++;
+      update_index++;
+      updatelength++;
     }
-    length++;  
+    updatelength++;  
     //fprintf(syrus, "01\r\n");
-    syrus_buffer_index = 1;
-    hex_eemprom_index = 0;
+    update_index = 1;
+    hex_eemprom_index = hex_start_eemprom_address;
     total_arrows = 0;
-    if((syrus_buffer[0]=='*')&&(syrus_buffer[length-1]=='&'))
+    if((syrus_buffer[0]=='*')&&(syrus_buffer[updatelength-1]=='&'))
     {      
       //fprintf(syrus, "02\r\n");
-      while(syrus_buffer[syrus_buffer_index]==':')
+      while(syrus_buffer[update_index]==':')
       {
         //fprintf(syrus, "03\r\n");
-        restart_wdt(); 
         do{
           //fprintf(syrus, "04\r\n");
           restart_wdt(); 
-          //hex_buffer[j] = syrus_buffer[syrus_buffer_index];
-          write_ext_eeprom(hex_eemprom_address+hex_eemprom_index,syrus_buffer[syrus_buffer_index]);   
-          syrus_buffer_index++;
+          //hex_buffer[j] = syrus_buffer[update_index];
+          write_ext_eeprom(hex_eemprom_index,syrus_buffer[update_index]);   
+          update_index++;
           hex_eemprom_index++;
-        }while((syrus_buffer[syrus_buffer_index]!=':')&&(syrus_buffer[syrus_buffer_index+1]!='&'));
-        hex_eemprom_address += next_eeprom_page;
+        }while((syrus_buffer[update_index]!=':')&&(syrus_buffer[update_index+1]!='&'));
+        //hex_eemprom_address += next_eeprom_page;
         total_arrows++;
-        hex_eemprom_index = 0;
+        hex_eemprom_index = hex_start_eemprom_address + (total_arrows*next_eeprom_page);
         fprintf(syrus, "L%04Lu OK\r\n", total_arrows);
       }
     }
@@ -278,6 +297,9 @@ void scan_cmd()
     index=0;
   } 
 }
+
+
+
 
 void send_to_buffer_syrus(char c)
 { 
@@ -323,6 +345,32 @@ void init_interrupts()
    enable_interrupts(GLOBAL);
 }
 
+void print_eeprom()
+{  
+
+int16 linea;
+int16 columna;
+
+   if(print_eeprom_flag)
+   {
+      hex_eemprom_index = hex_start_eemprom_address;
+      linea=0;
+      do{
+         columna=0;
+         fprintf(syrus,"[%04Lu] ",hex_eemprom_index);
+         do{     
+            data_eeprom = read_ext_eeprom(hex_eemprom_index);
+            fprintf(syrus,"%c",data_eeprom);
+            hex_eemprom_index++;
+            columna++;
+         }while(columna<=45);
+         fprintf(syrus,"\r\n");
+         linea++;
+         hex_eemprom_index = hex_start_eemprom_address + (linea*next_eeprom_page);
+      }while(linea<=total_arrows);
+      print_eeprom_flag = false;
+   }
+}
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //!////////////////////////////////        PROGRAMA PRINCIPAL           /////////////////////////////////
@@ -345,6 +393,8 @@ void main()
       scan_cmd();
       
       scan_update();
+      
+      print_eeprom();
    }
 }
 
